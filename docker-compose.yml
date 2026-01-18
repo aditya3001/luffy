@@ -1,0 +1,265 @@
+version: '3.8'
+
+services:
+  # PostgreSQL - Relational Database for metadata
+  postgres:
+    image: postgres:15-alpine
+    container_name: luffy-postgres
+    environment:
+      POSTGRES_USER: luffy_user
+      POSTGRES_PASSWORD: luffy_password
+      POSTGRES_DB: observability
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U luffy_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - luffy-network
+
+  # Redis - Cache and Celery broker
+  redis:
+    image: redis:7-alpine
+    container_name: luffy-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - luffy-network
+
+  # Qdrant - Vector Database
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: luffy-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - luffy-network
+
+  # OpenSearch - Log Storage and Search
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    container_name: luffy-opensearch
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - DISABLE_SECURITY_PLUGIN=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - luffy-network
+
+  # OpenSearch Dashboards (optional, for UI)
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.11.0
+    container_name: luffy-opensearch-dashboards
+    ports:
+      - "5601:5601"
+    environment:
+      OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
+    depends_on:
+      - opensearch
+    networks:
+      - luffy-network
+
+  # Fluent Bit - Log Collection and Forwarding
+  fluent-bit:
+    image: fluent/fluent-bit:2.2
+    container_name: luffy-fluent-bit
+    ports:
+      - "2020:2020"  # HTTP monitoring endpoint
+    volumes:
+      # Configuration files
+      - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
+      - ./fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf
+      - ./fluent-bit/scripts:/fluent-bit/scripts
+      # Log files to tail
+      - ./data/repos/zoro/logs:/var/log/app
+      # State file for tracking read position
+      - fluent_bit_state:/var/log
+      # Storage for buffering
+      - fluent_bit_storage:/var/log/fluent-bit-storage
+    env_file:
+      - .env
+    depends_on:
+      - api
+      - opensearch
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2020/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - luffy-network
+    restart: unless-stopped    
+
+  # ClickHouse - Time-Series Database (optional)
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: luffy-clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_DB: logs
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - luffy-network
+
+  # FastAPI Application
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # container_name: luffy-api-local
+    ports:
+      - "8000:8000"
+    environment:
+      # Database connections (using container names)
+      DATABASE_URL: postgresql://luffy_user:luffy_password@postgres:5432/observability
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      ELASTICSEARCH_URL: http://opensearch:9200
+    
+      
+      # Development settings
+      ENV: development
+      
+      # LLM Configuration (defaults - override in .env if needed)
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-your-key-here}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4-turbo-preview}
+      
+      # Repository (defaults - override in .env if needed)
+      GIT_REPO_PATH: ${GIT_REPO_PATH:-/app/data/repo}
+      GIT_BRANCH: ${GIT_BRANCH:-main}
+      
+      # Feature flags
+      ENABLE_CODE_INDEXING: ${ENABLE_CODE_INDEXING:-true}
+      ENABLE_LLM_ANALYSIS: ${ENABLE_LLM_ANALYSIS:-true}
+      LOG_SOURCE: ${LOG_SOURCE:-opensearch}
+      
+      # Fluent Bit Ingestion API
+      FLUENT_BIT_API_TOKEN: ${FLUENT_BIT_API_TOKEN:-your-secure-api-token-here}
+      FLUENT_BIT_RATE_LIMIT: ${FLUENT_BIT_RATE_LIMIT:-10000}
+      FLUENT_BIT_BATCH_SIZE_LIMIT: ${FLUENT_BIT_BATCH_SIZE_LIMIT:-1000}
+      FLUENT_BIT_DEDUP_WINDOW_SECONDS: ${FLUENT_BIT_DEDUP_WINDOW_SECONDS:-600}
+    env_file:
+      - .env  # Optional: Override defaults here
+    volumes:
+      # Mount source code for hot-reload
+      - ./src:/app/src
+      - ./scripts:/app/scripts
+      - ./data:/app/data
+    # depends_on:
+    #   postgres:
+    #     condition: service_healthy
+    #   redis:
+    #     condition: service_healthy
+    #   qdrant:
+    #     condition: service_healthy
+    #   opensearch:
+    #     condition: service_healthy
+    # command: python scripts/start_api.py
+    networks:
+      - luffy-network
+
+  # Celery Worker (for async tasks)
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: luffy-celery-worker
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src
+      - ./scripts:/app/scripts
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    command: celery -A src.services.tasks worker --loglevel=info
+    networks:
+      - luffy-network
+
+  # Celery Beat (for scheduled tasks)
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: luffy-celery-beat
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src
+      - ./scripts:/app/scripts
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    command: celery -A src.services.tasks beat --loglevel=info
+    networks:
+      - luffy-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  opensearch_data:
+  clickhouse_data:
+  fluent_bit_state:
+  fluent_bit_storage:
+
+networks:
+  luffy-network:
+    driver: bridge

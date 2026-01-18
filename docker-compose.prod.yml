@@ -1,0 +1,284 @@
+version: '3.8'
+
+# ============================================================================
+# LUFFY OBSERVABILITY PLATFORM - PRODUCTION DEPLOYMENT
+# ============================================================================
+# This is a production-ready docker-compose configuration.
+# All configuration is read from .env file.
+# ============================================================================
+
+services:
+  # ==========================================================================
+  # CORE DATABASES
+  # ==========================================================================
+  
+  postgres:
+    image: postgres:15-alpine
+    container_name: luffy-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - luffy-network
+    deploy:
+      resources:
+        limits:
+          memory: ${POSTGRES_MEMORY_LIMIT:-2g}
+
+  redis:
+    image: redis:7-alpine
+    container_name: luffy-redis
+    command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - luffy-network
+    deploy:
+      resources:
+        limits:
+          memory: ${REDIS_MEMORY_LIMIT:-1g}
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: luffy-qdrant
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - luffy-network
+    deploy:
+      resources:
+        limits:
+          memory: ${QDRANT_MEMORY_LIMIT:-2g}
+
+  # ==========================================================================
+  # APPLICATION SERVICES
+  # ==========================================================================
+  
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: luffy-api
+    command: uvicorn src.services.api:app --host ${API_HOST} --port ${API_PORT} --workers ${API_WORKERS}
+    ports:
+      - "${API_EXTERNAL_PORT:-8000}:${API_PORT:-8000}"
+    environment:
+      # Database
+      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_POOL_SIZE=${DATABASE_POOL_SIZE}
+      - DATABASE_MAX_OVERFLOW=${DATABASE_MAX_OVERFLOW}
+      
+      # Redis
+      - REDIS_URL=${REDIS_URL}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_DB=${REDIS_DB}
+      - REDIS_CACHE_TTL=${REDIS_CACHE_TTL}
+      
+      # Qdrant
+      - QDRANT_HOST=${QDRANT_HOST}
+      - QDRANT_PORT=${QDRANT_PORT}
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+      
+      # LLM
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LLM_MODEL=${LLM_MODEL}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE}
+      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS}
+      
+      # API
+      - API_HOST=${API_HOST}
+      - API_PORT=${API_PORT}
+      - API_WORKERS=${API_WORKERS}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      
+      # Fluent Bit
+      - FLUENT_BIT_API_TOKEN=${FLUENT_BIT_API_TOKEN}
+      - FLUENT_BIT_RATE_LIMIT=${FLUENT_BIT_RATE_LIMIT}
+      
+      # Processing
+      - LOG_FETCH_INTERVAL=${LOG_FETCH_INTERVAL}
+      - BATCH_SIZE=${BATCH_SIZE}
+      - MAX_WORKERS=${MAX_WORKERS}
+      - CLUSTERING_THRESHOLD=${CLUSTERING_THRESHOLD}
+      
+      # Code Repository
+      - GIT_REPO_PATH=${GIT_REPO_PATH}
+      - GIT_BRANCH=${GIT_BRANCH}
+      - CODE_INDEXING_MODE=${CODE_INDEXING_MODE}
+      
+      # Environment
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${API_PORT:-8000}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - luffy-network
+    deploy:
+      resources:
+        limits:
+          memory: ${API_MEMORY_LIMIT:-2g}
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: luffy-worker
+    command: celery -A src.services.tasks worker --loglevel=info --concurrency=${MAX_WORKERS:-4}
+    environment:
+      # Database
+      - DATABASE_URL=${DATABASE_URL}
+      
+      # Redis
+      - REDIS_URL=${REDIS_URL}
+      - CELERY_BROKER_URL=${REDIS_URL}
+      - CELERY_RESULT_BACKEND=${REDIS_URL}
+      
+      # Qdrant
+      - QDRANT_HOST=${QDRANT_HOST}
+      - QDRANT_PORT=${QDRANT_PORT}
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+      
+      # LLM
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LLM_MODEL=${LLM_MODEL}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE}
+      
+      # Processing
+      - LOG_FETCH_INTERVAL=${LOG_FETCH_INTERVAL}
+      - BATCH_SIZE=${BATCH_SIZE}
+      - MAX_WORKERS=${MAX_WORKERS}
+      - CLUSTERING_THRESHOLD=${CLUSTERING_THRESHOLD}
+      
+      # Code Repository
+      - GIT_REPO_PATH=${GIT_REPO_PATH}
+      - GIT_BRANCH=${GIT_BRANCH}
+      - CODE_INDEXING_MODE=${CODE_INDEXING_MODE}
+      
+      # OpenSearch (if used)
+      - OPENSEARCH_HOST=${OPENSEARCH_HOST}
+      - OPENSEARCH_PORT=${OPENSEARCH_PORT}
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL}
+      
+      # Environment
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - postgres
+      - redis
+      - qdrant
+      - api
+    restart: unless-stopped
+    networks:
+      - luffy-network
+    deploy:
+      resources:
+        limits:
+          memory: ${WORKER_MEMORY_LIMIT:-2g}
+
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: luffy-beat
+    command: celery -A src.services.tasks beat --loglevel=info
+    environment:
+      # Database
+      - DATABASE_URL=${DATABASE_URL}
+      
+      # Redis
+      - REDIS_URL=${REDIS_URL}
+      - CELERY_BROKER_URL=${REDIS_URL}
+      - CELERY_RESULT_BACKEND=${REDIS_URL}
+      
+      # Task Intervals
+      - TASK_FETCH_LOGS_INTERVAL=${TASK_FETCH_LOGS_INTERVAL:-30m}
+      - TASK_GENERATE_RCA_INTERVAL=${TASK_GENERATE_RCA_INTERVAL:-15m}
+      - TASK_INDEX_CODE_INTERVAL=${TASK_INDEX_CODE_INTERVAL:-24h}
+      - TASK_CLEANUP_OLD_DATA_INTERVAL=${TASK_CLEANUP_OLD_DATA_INTERVAL:-7d}
+      
+      # Environment
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+    depends_on:
+      - postgres
+      - redis
+      - api
+    restart: unless-stopped
+    networks:
+      - luffy-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: luffy-frontend
+    ports:
+      - "${FRONTEND_EXTERNAL_PORT:-3000}:80"
+    environment:
+      - REACT_APP_API_URL=${REACT_APP_API_URL}
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - luffy-network
+    deploy:
+      resources:
+        limits:
+          memory: ${FRONTEND_MEMORY_LIMIT:-512m}
+
+# ============================================================================
+# VOLUMES
+# ============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  qdrant_data:
+    driver: local
+
+# ============================================================================
+# NETWORKS
+# ============================================================================
+networks:
+  luffy-network:
+    driver: bridge

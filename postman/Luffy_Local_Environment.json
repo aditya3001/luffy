@@ -1,0 +1,43 @@
+{
+  "id": "luffy-local-env",
+  "name": "Luffy - Local Development",
+  "values": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "api_version",
+      "value": "v1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "cluster_id",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_name",
+      "value": "fetch_and_process_logs",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "log_source_id",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "auth_token",
+      "value": "",
+      "type": "secret",
+      "enabled": false
+    }
+  ],
+  "_postman_variable_scope": "environment"
+}

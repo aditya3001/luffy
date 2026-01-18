@@ -1,0 +1,3 @@
+- docker exec -it luffy-postgres psql -U luffy_user observability
+
+- docker compose -f 'docker-compose.dev.yml' --profile with-fluent-bit up -d

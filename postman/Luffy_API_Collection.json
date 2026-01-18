@@ -1,0 +1,760 @@
+{
+  "info": {
+    "name": "Luffy - AI-Powered Log Observability API",
+    "description": "Complete API collection for testing Luffy platform endpoints including clusters, RCA, tasks, and log sources",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "api_version",
+      "value": "v1",
+      "type": "string"
+    },
+    {
+      "key": "cluster_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "task_name",
+      "value": "fetch_and_process_logs",
+      "type": "string"
+    },
+    {
+      "key": "log_source_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & Info",
+      "item": [
+        {
+          "name": "Root Endpoint",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/",
+              "host": ["{{base_url}}"],
+              "path": [""]
+            },
+            "description": "Get API information and available endpoints"
+          },
+          "response": []
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Check if the API is running"
+          },
+          "response": []
+        },
+        {
+          "name": "System Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/stats",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "stats"]
+            },
+            "description": "Get overall system statistics including total clusters, active clusters, RCA generated, and logs processed"
+          },
+          "response": []
+        }
+      ],
+      "description": "Basic health and information endpoints"
+    },
+    {
+      "name": "Exception Clusters",
+      "item": [
+        {
+          "name": "List Clusters",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/clusters?limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "clusters"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "Maximum number of clusters to return"
+                }
+              ]
+            },
+            "description": "Get a list of active exception clusters"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.clusters && response.clusters.length > 0) {",
+                  "        pm.collectionVariables.set('cluster_id', response.clusters[0].cluster_id);",
+                  "        console.log('Set cluster_id to:', response.clusters[0].cluster_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Cluster Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/clusters/{{cluster_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "clusters", "{{cluster_id}}"]
+            },
+            "description": "Get detailed information about a specific cluster including stack trace and sample logs"
+          },
+          "response": []
+        }
+      ],
+      "description": "Endpoints for managing and viewing exception clusters"
+    },
+    {
+      "name": "Root Cause Analysis (RCA)",
+      "item": [
+        {
+          "name": "Get RCA Result",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/rca/{{cluster_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "rca", "{{cluster_id}}"]
+            },
+            "description": "Get the RCA result for a specific cluster"
+          },
+          "response": []
+        },
+        {
+          "name": "Generate RCA",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cluster_id\": \"{{cluster_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/rca/generate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "rca", "generate"]
+            },
+            "description": "Trigger RCA generation for a specific cluster"
+          },
+          "response": []
+        },
+        {
+          "name": "Submit RCA Feedback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cluster_id\": \"{{cluster_id}}\",\n  \"rca_id\": \"{{cluster_id}}\",\n  \"is_helpful\": true,\n  \"accuracy_rating\": 5,\n  \"comments\": \"Very helpful analysis with clear recommendations\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/feedback",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "feedback"]
+            },
+            "description": "Submit feedback on an RCA result"
+          },
+          "response": []
+        }
+      ],
+      "description": "Endpoints for RCA generation and feedback"
+    },
+    {
+      "name": "Task Management",
+      "item": [
+        {
+          "name": "List All Tasks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/tasks",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "tasks"]
+            },
+            "description": "Get list of all periodic tasks and their configurations"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Task Configuration",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/tasks/{{task_name}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "tasks", "{{task_name}}"]
+            },
+            "description": "Get configuration for a specific task"
+          },
+          "response": []
+        },
+        {
+          "name": "Enable Task",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/tasks/{{task_name}}/enable",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "tasks", "{{task_name}}", "enable"]
+            },
+            "description": "Enable a periodic task"
+          },
+          "response": []
+        },
+        {
+          "name": "Disable Task",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/tasks/{{task_name}}/disable",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "tasks", "{{task_name}}", "disable"]
+            },
+            "description": "Disable a periodic task"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Task Configuration",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true,\n  \"interval_minutes\": 60,\n  \"modified_by\": \"postman_user\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/tasks/{{task_name}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "tasks", "{{task_name}}"]
+            },
+            "description": "Update task configuration (interval, enabled status, etc.)"
+          },
+          "response": []
+        },
+        {
+          "name": "Reset Task to Defaults",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/tasks/{{task_name}}/reset",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "tasks", "{{task_name}}", "reset"]
+            },
+            "description": "Reset task to default configuration"
+          },
+          "response": []
+        }
+      ],
+      "description": "Endpoints for managing periodic background tasks"
+    },
+    {
+      "name": "Log Sources (Extended)",
+      "item": [
+        {
+          "name": "List Log Sources",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/log-sources",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "log-sources"]
+            },
+            "description": "Get list of all configured log sources"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.sources && response.sources.length > 0) {",
+                  "        pm.collectionVariables.set('log_source_id', response.sources[0].id);",
+                  "        console.log('Set log_source_id to:', response.sources[0].id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Log Source",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/log-sources/{{log_source_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "log-sources", "{{log_source_id}}"]
+            },
+            "description": "Get details of a specific log source"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Log Source - OpenSearch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Production OpenSearch\",\n  \"type\": \"opensearch\",\n  \"url\": \"http://localhost:9200\",\n  \"username\": \"admin\",\n  \"password\": \"admin\",\n  \"index_pattern\": \"logs-*\",\n  \"ssl_verify\": true,\n  \"timeout\": 30\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/log-sources",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "log-sources"]
+            },
+            "description": "Create a new OpenSearch log source"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Log Source - Elasticsearch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Staging Elasticsearch\",\n  \"type\": \"elasticsearch\",\n  \"url\": \"http://localhost:9200\",\n  \"username\": \"elastic\",\n  \"password\": \"changeme\",\n  \"index_pattern\": \"logs-staging-*\",\n  \"ssl_verify\": false,\n  \"timeout\": 30\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/log-sources",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "log-sources"]
+            },
+            "description": "Create a new Elasticsearch log source"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Log Source - Loki",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Development Loki\",\n  \"type\": \"loki\",\n  \"url\": \"http://localhost:3100\",\n  \"timeout\": 30\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/log-sources",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "log-sources"]
+            },
+            "description": "Create a new Loki log source"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Log Source",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Production OpenSearch - Updated\",\n  \"url\": \"http://opensearch:9200\",\n  \"index_pattern\": \"logs-prod-*\",\n  \"timeout\": 60\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/log-sources/{{log_source_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "log-sources", "{{log_source_id}}"]
+            },
+            "description": "Update an existing log source configuration"
+          },
+          "response": []
+        },
+        {
+          "name": "Test Log Source Connection",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/log-sources/{{log_source_id}}/test",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "log-sources", "{{log_source_id}}", "test"]
+            },
+            "description": "Test connection to a log source"
+          },
+          "response": []
+        },
+        {
+          "name": "Activate Log Source",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/log-sources/{{log_source_id}}/activate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "log-sources", "{{log_source_id}}", "activate"]
+            },
+            "description": "Set a log source as the active source"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Log Source",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/log-sources/{{log_source_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "log-sources", "{{log_source_id}}"]
+            },
+            "description": "Delete a log source"
+          },
+          "response": []
+        }
+      ],
+      "description": "Endpoints for managing multiple log sources (OpenSearch, Elasticsearch, Loki, etc.)"
+    },
+    {
+      "name": "Log Processing",
+      "item": [
+        {
+          "name": "Process Log File",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"file_path\": \"/path/to/logs/application.log\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/process",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "process"]
+            },
+            "description": "Process a log file and extract exceptions"
+          },
+          "response": []
+        }
+      ],
+      "description": "Endpoints for log file processing"
+    },
+    {
+      "name": "Test Scenarios",
+      "item": [
+        {
+          "name": "Scenario 1: Complete Task Toggle Flow",
+          "item": [
+            {
+              "name": "1. List All Tasks",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/{{api_version}}/tasks",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "{{api_version}}", "tasks"]
+                }
+              }
+            },
+            {
+              "name": "2. Disable fetch_and_process_logs",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/{{api_version}}/tasks/fetch_and_process_logs/disable",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "{{api_version}}", "tasks", "fetch_and_process_logs", "disable"]
+                }
+              }
+            },
+            {
+              "name": "3. Verify Task is Disabled",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/{{api_version}}/tasks/fetch_and_process_logs",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "{{api_version}}", "tasks", "fetch_and_process_logs"]
+                }
+              }
+            },
+            {
+              "name": "4. Enable Task Again",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/{{api_version}}/tasks/fetch_and_process_logs/enable",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "{{api_version}}", "tasks", "fetch_and_process_logs", "enable"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Scenario 2: RCA Generation Flow",
+          "item": [
+            {
+              "name": "1. List Clusters",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/{{api_version}}/clusters?limit=10",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "{{api_version}}", "clusters"],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "10"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "2. Get Cluster Details",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/{{api_version}}/clusters/{{cluster_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "{{api_version}}", "clusters", "{{cluster_id}}"]
+                }
+              }
+            },
+            {
+              "name": "3. Generate RCA",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cluster_id\": \"{{cluster_id}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/{{api_version}}/rca/generate",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "{{api_version}}", "rca", "generate"]
+                }
+              }
+            },
+            {
+              "name": "4. Get RCA Result",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/{{api_version}}/rca/{{cluster_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "{{api_version}}", "rca", "{{cluster_id}}"]
+                }
+              }
+            },
+            {
+              "name": "5. Submit Feedback",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cluster_id\": \"{{cluster_id}}\",\n  \"rca_id\": \"{{cluster_id}}\",\n  \"is_helpful\": true,\n  \"accuracy_rating\": 4,\n  \"comments\": \"Good analysis\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/{{api_version}}/feedback",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "{{api_version}}", "feedback"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Scenario 3: Multi-Source Configuration",
+          "item": [
+            {
+              "name": "1. List Existing Sources",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/{{api_version}}/log-sources",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "{{api_version}}", "log-sources"]
+                }
+              }
+            },
+            {
+              "name": "2. Create OpenSearch Source",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Production OpenSearch\",\n  \"type\": \"opensearch\",\n  \"url\": \"http://localhost:9200\",\n  \"username\": \"admin\",\n  \"password\": \"admin\",\n  \"index_pattern\": \"logs-*\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/{{api_version}}/log-sources",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "{{api_version}}", "log-sources"]
+                }
+              }
+            },
+            {
+              "name": "3. Test Connection",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/{{api_version}}/log-sources/{{log_source_id}}/test",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "{{api_version}}", "log-sources", "{{log_source_id}}", "test"]
+                }
+              }
+            },
+            {
+              "name": "4. Activate Source",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/{{api_version}}/log-sources/{{log_source_id}}/activate",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "{{api_version}}", "log-sources", "{{log_source_id}}", "activate"]
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Complete test scenarios for common workflows"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Set timestamp for requests",
+          "pm.globals.set('timestamp', new Date().toISOString());"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Common test for all requests",
+          "pm.test('Response time is less than 5000ms', function () {",
+          "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+          "});",
+          "",
+          "pm.test('Response has valid JSON', function () {",
+          "    pm.response.to.be.json;",
+          "});"
+        ]
+      }
+    }
+  ]
+}

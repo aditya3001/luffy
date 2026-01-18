@@ -1,0 +1,365 @@
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  Card,
+  Switch,
+  Button,
+  Space,
+  Typography,
+  Row,
+  Col,
+  Statistic,
+  Tag,
+  Modal,
+  Form,
+  Input,
+  InputNumber,
+  message,
+  Spin,
+  Alert,
+  Timeline,
+  Badge,
+  Tooltip,
+  Tabs,
+  Table,
+  Select,
+  Divider,
+  Descriptions,
+} from 'antd';
+import {
+  PlayCircleOutlined,
+  PauseCircleOutlined,
+  SettingOutlined,
+  ClockCircleOutlined,
+  CheckCircleOutlined,
+  ExclamationCircleOutlined,
+  CloseCircleOutlined,
+  ReloadOutlined,
+  EditOutlined,
+  UndoOutlined,
+  DatabaseOutlined,
+  ThunderboltOutlined,
+} from '@ant-design/icons';
+import { format } from 'date-fns';
+import { taskAPI, taskManagementAPI, servicesAPI } from '@/api/client';
+import type { ColumnsType } from 'antd/es/table';
+import type { TaskConfig } from '@/types';
+import { useAppStore } from '@/store';
+import { useServiceContext } from '@/contexts/ServiceContext';
+
+const TaskManagement = () => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<string | null>(null);
+  const [form] = Form.useForm();
+  const queryClient = useQueryClient();
+  const { refreshIntervals } = useAppStore();
+  const { selectedService } = useServiceContext();
+
+  // Fetch service-specific tasks when service is selected
+  const { data: tasksData, isLoading } = useQuery({
+    queryKey: ['service-tasks', selectedService],
+    queryFn: () => selectedService ? taskManagementAPI.getServiceTasks(selectedService) : Promise.resolve(null),
+    enabled: !!selectedService,
+    refetchInterval: refreshIntervals.tasks,
+  });
+
+  // Fetch global tasks as fallback (for backwards compatibility)
+  const { data: globalTasksData } = useQuery({
+    queryKey: ['tasks'],
+    queryFn: taskAPI.list,
+    enabled: !selectedService,
+    refetchInterval: refreshIntervals.tasks,
+  });
+
+  // Use service-specific tasks if available, otherwise use global tasks
+  const tasks = selectedService ? (tasksData?.tasks || {}) : (globalTasksData?.tasks || {});
+
+  const toggleMutation = useMutation({
+    mutationFn: ({ taskName, enabled }: { taskName: string; enabled: boolean }) => {
+      if (selectedService) {
+        // Use service-specific task management
+        return enabled ? taskManagementAPI.disableAllServiceTasks(selectedService) : taskManagementAPI.enableAllServiceTasks(selectedService);
+      } else {
+        // Use global task management
+        return enabled ? taskAPI.disable(taskName) : taskAPI.enable(taskName);
+      }
+    },
+    onSuccess: (_, { taskName, enabled }) => {
+      message.success(`Task ${enabled ? 'disabled' : 'enabled'} successfully`);
+      if (selectedService) {
+        queryClient.invalidateQueries({ queryKey: ['service-tasks', selectedService] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      }
+    },
+    onError: () => {
+      message.error('Failed to toggle task');
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ taskName, config }: { taskName: string; config: TaskConfig }) => {
+      if (selectedService) {
+        // Use service-specific task update
+        return taskManagementAPI.updateServiceTasks(selectedService, config);
+      } else {
+        // Use global task update
+        return taskAPI.update(taskName, config);
+      }
+    },
+    onSuccess: () => {
+      message.success('Task updated successfully');
+      if (selectedService) {
+        queryClient.invalidateQueries({ queryKey: ['service-tasks', selectedService] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      }
+      setIsModalOpen(false);
+      setEditingTask(null);
+      form.resetFields();
+    },
+    onError: () => {
+      message.error('Failed to update task');
+    },
+  });
+
+  const resetMutation = useMutation({
+    mutationFn: taskAPI.reset,
+    onSuccess: () => {
+      message.success('Task reset to defaults');
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    },
+    onError: () => {
+      message.error('Failed to reset task');
+    },
+  });
+
+  const handleToggle = (taskName: string, enabled: boolean) => {
+    Modal.confirm({
+      title: `${enabled ? 'Disable' : 'Enable'} Task`,
+      content: `Are you sure you want to ${enabled ? 'disable' : 'enable'} the task "${taskName}"?`,
+      onOk: () => toggleMutation.mutate({ taskName, enabled }),
+    });
+  };
+
+  const handleEdit = (taskName: string) => {
+    const task = tasks[taskName];
+    setEditingTask(taskName);
+    form.setFieldsValue({
+      interval_minutes: task.interval_minutes,
+      cron: task.cron,
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      if (editingTask) {
+        updateMutation.mutate({
+          taskName: editingTask,
+          config: { ...values, modified_by: 'frontend_user' },
+        });
+      }
+    } catch (error) {
+      console.error('Validation failed:', error);
+    }
+  };
+
+  const taskCards = [
+    {
+      key: 'fetch_and_process_logs',
+      title: 'Fetch & Process Logs',
+      icon: '📥',
+      color: '#1890ff',
+    },
+    {
+      key: 'generate_rca_for_clusters',
+      title: 'Generate RCA',
+      icon: '🔍',
+      color: '#52c41a',
+    },
+    {
+      key: 'index_code_repository',
+      title: 'Index Code Repository',
+      icon: '📚',
+      color: '#722ed1',
+    },
+    {
+      key: 'cleanup_old_data',
+      title: 'Cleanup Old Data',
+      icon: '🗑️',
+      color: '#fa8c16',
+    },
+  ];
+
+  return (
+    <div>
+      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 600 }}>Task Management</h1>
+          <p style={{ margin: '8px 0 0', color: '#8c8c8c' }}>
+            {selectedService ? 'Control and monitor service-specific background tasks' : 'Select a service to manage its background tasks'}
+          </p>
+        </div>
+        <Button 
+          icon={<ReloadOutlined />} 
+          onClick={() => {
+            if (selectedService) {
+              queryClient.invalidateQueries({ queryKey: ['service-tasks', selectedService] });
+            } else {
+              queryClient.invalidateQueries({ queryKey: ['tasks'] });
+            }
+          }}
+          disabled={!selectedService}
+        >
+          Refresh
+        </Button>
+      </div>
+
+      {!selectedService ? (
+        // Show service selection prompt when no service is selected
+        <div style={{ textAlign: 'center', padding: '80px 20px' }}>
+          <DatabaseOutlined style={{ fontSize: 64, color: '#d9d9d9', marginBottom: 16 }} />
+          <h2 style={{ color: '#8c8c8c', marginBottom: 8 }}>Select a Service</h2>
+          <p style={{ color: '#bfbfbf', fontSize: 16, marginBottom: 24 }}>
+            Choose a service from the dropdown in the header to manage its background tasks and configurations.
+          </p>
+        </div>
+      ) : (
+        <Row gutter={[16, 16]}>
+        {taskCards.map((cardInfo) => {
+          const task = tasks[cardInfo.key];
+          if (!task) return null;
+
+          const isEnabled = task.enabled;
+          const schedule = task.interval_minutes
+            ? `Every ${task.interval_minutes} minutes`
+            : task.cron || 'Not configured';
+
+          return (
+            <Col xs={24} sm={12} lg={6} key={cardInfo.key}>
+              <Card
+                style={{
+                  borderLeft: `4px solid ${cardInfo.color}`,
+                  height: '100%',
+                }}
+              >
+                <div style={{ marginBottom: 16 }}>
+                  <Space>
+                    <span style={{ fontSize: 24 }}>{cardInfo.icon}</span>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 16 }}>{cardInfo.title}</div>
+                      <div style={{ fontSize: 12, color: '#8c8c8c' }}>{task.description}</div>
+                    </div>
+                  </Space>
+                </div>
+
+                <Descriptions column={1} size="small" style={{ marginBottom: 16 }}>
+                  <Descriptions.Item label="Status">
+                    <Tag color={isEnabled ? 'green' : 'default'} icon={isEnabled ? <CheckCircleOutlined /> : <CloseCircleOutlined />}>
+                      {isEnabled ? 'Enabled' : 'Disabled'}
+                    </Tag>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Schedule">
+                    <Tag icon={<ClockCircleOutlined />}>{schedule}</Tag>
+                  </Descriptions.Item>
+                  {task.last_run && (
+                    <Descriptions.Item label="Last Run">
+                      <Tooltip title={new Date(task.last_run.timestamp).toLocaleString()}>
+                        <Tag color={task.last_run.status === 'success' ? 'green' : task.last_run.status === 'failed' ? 'red' : 'default'}>
+                          {task.last_run.status}
+                        </Tag>
+                      </Tooltip>
+                    </Descriptions.Item>
+                  )}
+                  {task.last_modified && (
+                    <Descriptions.Item label="Modified">
+                      <div style={{ fontSize: 11 }}>
+                        {format(new Date(task.last_modified), 'MMM dd, HH:mm')}
+                        <br />
+                        by {task.modified_by}
+                      </div>
+                    </Descriptions.Item>
+                  )}
+                </Descriptions>
+
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 13 }}>Enable/Disable</span>
+                    <Switch
+                      checked={isEnabled}
+                      onChange={() => handleToggle(cardInfo.key, isEnabled)}
+                      loading={toggleMutation.isPending}
+                    />
+                  </div>
+
+                  <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                    <Button
+                      size="small"
+                      icon={<EditOutlined />}
+                      onClick={() => handleEdit(cardInfo.key)}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      size="small"
+                      onClick={() => resetMutation.mutate(cardInfo.key)}
+                      loading={resetMutation.isPending}
+                    >
+                      Reset
+                    </Button>
+                  </Space>
+                </Space>
+              </Card>
+            </Col>
+          );
+        })}
+        </Row>
+      )}
+
+      <Modal
+        title={`Edit Task: ${editingTask}`}
+        open={isModalOpen}
+        onOk={handleSubmit}
+        onCancel={() => {
+          setIsModalOpen(false);
+          setEditingTask(null);
+          form.resetFields();
+        }}
+        confirmLoading={updateMutation.isPending}
+      >
+        <Form form={form} layout="vertical" style={{ marginTop: 24 }}>
+          {tasks[editingTask!]?.interval_minutes !== undefined && (
+            <Form.Item
+              label="Interval (minutes)"
+              name="interval_minutes"
+              rules={[
+                { required: true, message: 'Please enter interval' },
+                { type: 'number', min: 1, message: 'Minimum 1 minute' },
+              ]}
+            >
+              <InputNumber style={{ width: '100%' }} placeholder="30" />
+            </Form.Item>
+          )}
+
+          {tasks[editingTask!]?.cron && (
+            <Form.Item
+              label="Cron Expression"
+              name="cron"
+              rules={[{ required: true, message: 'Please enter cron expression' }]}
+            >
+              <Input placeholder="0 2 * * *" />
+            </Form.Item>
+          )}
+
+          <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 8 }}>
+            Note: Changes take effect on the next scheduled run. For interval changes, restart Celery Beat.
+          </div>
+        </Form>
+      </Modal>
+    </div>
+  );
+};
+
+export default TaskManagement;
